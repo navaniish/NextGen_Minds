@@ -433,7 +433,7 @@ def run_preprocessing(process_train: bool = True,
 # ─────────────────────────────────────────────────────────────────────
 
 def _write_report(results: list) -> None:
-    """Write normalization_report.csv."""
+    """Write normalization_report.csv (merging with existing records if present)."""
     import csv
     os.makedirs(REPORTS_DIR, exist_ok=True)
 
@@ -442,13 +442,39 @@ def _write_report(results: list) -> None:
         "name_changed", "address_changed", "country_changed",
         "duplicate_ids", "passed", "errors", "elapsed_sec",
     ]
+
+    existing_map = {}
+    if os.path.exists(NORMALIZATION_REPORT):
+        try:
+            with open(NORMALIZATION_REPORT, "r", newline="", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    if row.get("file"):
+                        existing_map[row["file"]] = row
+        except Exception:
+            pass
+
+    for r in results:
+        label = r.get("label", "")
+        entry = {
+            "file": label,
+            "original_rows": r.get("original_rows", 0),
+            "clean_rows": r.get("clean_rows", 0),
+            "name_changed": r.get("name_changed", 0),
+            "address_changed": r.get("address_changed", 0),
+            "country_changed": r.get("country_changed", 0),
+            "duplicate_ids": r.get("duplicate_ids", 0),
+            "passed": r.get("passed", True),
+            "errors": " | ".join(r.get("errors", [])) if isinstance(r.get("errors"), list) else r.get("errors", ""),
+            "elapsed_sec": r.get("elapsed_sec", 0),
+        }
+        existing_map[label] = entry
+
     with open(NORMALIZATION_REPORT, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
         w.writeheader()
-        for r in results:
-            r["file"] = r.get("label", "")
-            r["errors"] = " | ".join(r.get("errors", []))
-            w.writerow(r)
+        for label, row in existing_map.items():
+            w.writerow(row)
 
     log.info(f"\nReport written → {NORMALIZATION_REPORT}")
 
@@ -542,6 +568,8 @@ if __name__ == "__main__":
     )
     parser.add_argument("--train-only", action="store_true",
                         help="Process training files only (skip test)")
+    parser.add_argument("--test-only", action="store_true",
+                        help="Process test files only (skip train)")
     parser.add_argument("--demo", action="store_true",
                         help="Show normalization examples and exit")
     args = parser.parse_args()
@@ -550,6 +578,6 @@ if __name__ == "__main__":
         _demo()
     else:
         run_preprocessing(
-            process_train=True,
+            process_train=not args.test_only,
             process_test=not args.train_only,
         )

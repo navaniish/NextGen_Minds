@@ -1,0 +1,4 @@
+file,original_rows,clean_rows,name_changed,address_changed,country_changed,duplicate_ids,passed,errors,elapsed_sec
+Train source1,2206821,2206821,2206821,2206821,2206821,0,True,,157.7
+Train source2,5034616,5034616,4540326,4865649,5034616,0,True,,337.2
+Train source3,5285603,5285603,4967698,5109687,5285603,0,True,,344.5

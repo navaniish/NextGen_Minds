@@ -254,7 +254,7 @@ def evaluate_ground_truth_recall(cand_df: pd.DataFrame, gt_path: str) -> dict:
     
     true_pairs = set()
     for idx, row in gt_df.iterrows():
-        s1_id = row[ENTITY_ID_COL]
+        s1_id = row.get("source1_entity_id", row.get(ENTITY_ID_COL, ""))
         matched_str = row.get("matched_entity_ids", "")
         if matched_str:
             for m_id in matched_str.split(","):

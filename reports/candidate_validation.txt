@@ -1,0 +1,46 @@
+================================================================================
+AMAZON ML CHALLENGE — STAGE 4 BLOCKING DELIVERABLE VALIDATION REPORT
+================================================================================
+
+1. FILE INFORMATION
+   Target File Path:  /Users/mac/NextGen_Minds/output/candidate_pairs.tsv
+   File Size:         877.24 MB (919,857,943 bytes)
+   Total Header Row:  1 row ('source1_entity_id\tcandidate_entity_ids')
+   Total Data Rows:   1,732,544 rows
+
+2. CANDIDATE PAIR COVERAGE & STATISTICS
+   Total Source 1 Records:          1,732,544
+   S1 Records with Candidates (>0): 1,726,580 (99.66%)
+   S1 Records with Zero Candidates: 5,964 (0.34%)
+   Total Candidate Pairs Generated: 69,635,106
+   Average Candidates per S1:       40.19
+   Min Candidates per S1:           0
+   Max Candidates per S1:           50
+   Source 2 Candidates:             34,742,218 (49.89%)
+   Source 3 Candidates:             34,892,888 (50.11%)
+
+3. VALIDATION ASSERTIONS SUMMARY
+--------------------------------------------------------------------------------
+ASSERTION NAME            | STATUS | DETAILS                                      
+--------------------------------------------------------------------------------
+FILE_NOT_EMPTY            | PASS   | File exists (877.24 MB)                      
+HEADER_FORMAT             | PASS   | Header matches required: 'source1_entity_id\tcandidate_entity_ids'
+ROW_COUNT_MATCH           | PASS   | Exactly 1,732,544 rows matching test Source 1 count
+S1_ID_SEQUENCE            | PASS   | Source 1 entity IDs match original dataset in exact order
+S1_ID_UNIQUENESS          | PASS   | All 1,732,544 Source 1 entity IDs are unique (zero duplicates)
+NO_SELF_REFERENCING       | PASS   | Zero Source 1 entity IDs present in candidate_entity_ids column
+CANDIDATE_ID_VALIDITY     | PASS   | All 69,635,106 candidate IDs strictly belong to Source 2 or Source 3
+--------------------------------------------------------------------------------
+
+4. SAMPLE ENTRIES VERIFICATION (First 5 Rows)
+--------------------------------------------------------------------------------
+source1_entity_id    | candidate_entity_ids (truncated if long)
+--------------------------------------------------------------------------------
+S1-714132312         | S2-786029403,S2-435263846,S2-778633378,S2-550306632,S2-65506...
+S1-106407869         | S2-705547832,S2-47475427,S2-886540563,S2-997023970,S2-571602...
+S1-156285671         | S2-468375769,S2-146286250,S2-762750173,S2-395950330,S2-56663...
+S1-689823050         | S2-989309837,S2-26353498,S2-212325818,S2-349088424,S2-654780...
+S1-921369899         | S2-808920974,S2-107533354,S2-796318544,S2-869471744,S2-63371...
+--------------------------------------------------------------------------------
+
+OVERALL VALIDATION STATUS: PASSED SUCCESSFUL

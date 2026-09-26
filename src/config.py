@@ -16,7 +16,18 @@ RAW_TEST_DIR  = os.path.join(PROJECT_ROOT, "DATASETS", "TEST")
 CLEAN_DIR       = os.path.join(PROJECT_ROOT, "clean_dataset")
 CLEAN_TRAIN_DIR = os.path.join(CLEAN_DIR, "train")
 CLEAN_TEST_DIR  = os.path.join(CLEAN_DIR, "test")
+CANDIDATES_DIR  = os.path.join(PROJECT_ROOT, "candidates")
+FEATURES_DIR    = os.path.join(PROJECT_ROOT, "features")
+SUBMISSION_DIR  = os.path.join(PROJECT_ROOT, "output")
 REPORTS_DIR     = os.path.join(PROJECT_ROOT, "reports")
+
+CANDIDATES_TRAIN_FILE = os.path.join(CANDIDATES_DIR, "candidates_train.parquet")
+CANDIDATES_TEST_FILE  = os.path.join(CANDIDATES_DIR, "candidates_test.parquet")
+FEATURES_TRAIN_FILE   = os.path.join(FEATURES_DIR,   "features_train.parquet")
+FEATURES_TEST_FILE    = os.path.join(FEATURES_DIR,   "features_test.parquet")
+SUBMISSION_FILE       = os.path.join(SUBMISSION_DIR, "matching_results.tsv")
+BLOCKING_REPORT       = os.path.join(REPORTS_DIR, "blocking_report.csv")
+PIPELINE_REPORT       = os.path.join(REPORTS_DIR, "pipeline_report.json")
 
 # ─── Raw File Names ───────────────────────────────────────────────────
 RAW_SOURCE_FILES = {
@@ -67,6 +78,17 @@ COUNTRY_CLEAN_COL = "country_clean"
 SOURCE_COLS       = [ENTITY_ID_COL, NAME_COL, ADDRESS_COL, COUNTRY_COL]
 CLEAN_EXTRA_COLS  = [NAME_CLEAN_COL, ADDRESS_CLEAN_COL, COUNTRY_CLEAN_COL]
 OUTPUT_COLS       = SOURCE_COLS + CLEAN_EXTRA_COLS
+
+# ─── Candidate / Feature Column Names ────────────────────────────────
+S1_ID_COL         = "s1_id"           # Source 1 entity ID in candidate pairs
+CAND_ID_COL       = "cand_id"         # Candidate entity ID from S2 or S3
+SOURCE_TAG_COL    = "source"          # Which source the candidate comes from
+MATCH_SCORE_COL   = "match_score"     # Model output probability
+IS_MATCH_COL      = "is_match"        # Binary prediction (0 or 1)
+
+# ─── Submission Column Names ─────────────────────────────────────────
+SUBMISSION_ENTITY_COL   = "entity_id"
+SUBMISSION_MATCHED_COL  = "matched_entity_ids"
 
 # ─── Normalization Settings ───────────────────────────────────────────
 

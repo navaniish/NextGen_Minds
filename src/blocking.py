@@ -43,56 +43,54 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
+STOP_WORDS = {"the", "inc", "ltd", "llc", "corp", "co", "company", "hotel", "restaurant",
+              "store", "auto", "cafe", "express", "group", "center", "services", "shop", "market"}
+
+
 def extract_blocking_keys(name: str, address: str) -> Set[str]:
-    """Generate multiple blocking keys for a record."""
+    """Generate multiple high-precision blocking keys for a record."""
     keys = set()
     
     if name and isinstance(name, str):
         name_clean = name.strip()
         if name_clean:
-            # Key 1: Full clean name
-            keys.add(f"n_full:{name_clean}")
-            
-            # Key 2: First word if len >= 3
-            words = name_clean.split()
-            if words and len(words[0]) >= 3:
-                keys.add(f"n_w0:{words[0]}")
-                
-            # Key 3: First 2 words combined if available
-            if len(words) >= 2:
-                keys.add(f"n_w01:{words[0]}_{words[1]}")
+            keys.add(f"nf:{name_clean}")
+            words = [w for w in name_clean.split() if w not in STOP_WORDS]
+            if words:
+                if len(words[0]) >= 4:
+                    keys.add(f"nw0:{words[0]}")
+                if len(words) >= 2:
+                    w2 = sorted(words[:2])
+                    keys.add(f"nw01:{w2[0]}_{w2[1]}")
 
     if address and isinstance(address, str):
         addr_clean = address.strip()
         if addr_clean:
             tokens = addr_clean.split()
-            # Key 4: First number token + next word
             nums = [t for t in tokens if t.isdigit()]
-            if nums:
-                keys.add(f"a_num:{nums[0]}")
-                if len(tokens) >= 2:
-                    keys.add(f"a_num_w:{nums[0]}_{tokens[1][:4]}")
+            if nums and len(tokens) >= 2:
+                first_w = next((t for t in tokens if not t.isdigit() and t not in STOP_WORDS), "")
+                if first_w:
+                    keys.add(f"anw:{nums[0]}_{first_w[:4]}")
 
     return keys
 
 
-def build_inverted_index(df: pd.DataFrame) -> Tuple[Dict[str, List[str]], Dict[str, Set[str]]]:
-    """Build an inverted index mapping blocking_key -> list of entity_ids."""
+def build_inverted_index(df: pd.DataFrame, max_bucket_size: int = 1000) -> Tuple[Dict[str, List[str]], Set[str]]:
+    """Build an inverted index mapping blocking_key -> list of entity_ids fast using zip."""
     index = defaultdict(list)
-    entity_keys = {}
 
-    for idx, row in df.iterrows():
-        eid = row[ENTITY_ID_COL]
-        name = row.get(NAME_CLEAN_COL, "")
-        addr = row.get(ADDRESS_CLEAN_COL, "")
-        
+    names = df.get(NAME_CLEAN_COL, df.get(NAME_COL, pd.Series([""] * len(df))))
+    addrs = df.get(ADDRESS_CLEAN_COL, df.get(ADDRESS_COL, pd.Series([""] * len(df))))
+    
+    for eid, name, addr in zip(df[ENTITY_ID_COL], names, addrs):
         keys = extract_blocking_keys(name, addr)
-        entity_keys[eid] = keys
-        
         for k in keys:
             index[k].append(eid)
             
-    return index, entity_keys
+    pruned_keys = {k for k, v in index.items() if len(v) > max_bucket_size}
+    log.info(f"Built inverted index with {len(index):,} keys (pruned {len(pruned_keys):,} over-broad buckets).")
+    return index, pruned_keys
 
 
 def generate_candidates_for_dataset(data_dir: str,
@@ -111,33 +109,32 @@ def generate_candidates_for_dataset(data_dir: str,
     
     log.info(f"Loaded: S1 ({len(df1):,} rows), S2 ({len(df2):,} rows), S3 ({len(df3):,} rows)")
     
-    # Partition by country
     log.info("Building inverted index for Source 2 and Source 3 ...")
-    index2, keys2 = build_inverted_index(df2)
-    index3, keys3 = build_inverted_index(df3)
+    index2, pruned2 = build_inverted_index(df2)
+    index3, pruned3 = build_inverted_index(df3)
     
     log.info("Matching Source 1 against indexed candidates ...")
     candidate_list = []
     
-    for idx, row in df1.iterrows():
-        s1_id = row[ENTITY_ID_COL]
-        name = row.get(NAME_CLEAN_COL, "")
-        addr = row.get(ADDRESS_CLEAN_COL, "")
-        s1_country = row.get(COUNTRY_CLEAN_COL, "")
-        
+    s1_names = df1.get(NAME_CLEAN_COL, df1.get(NAME_COL, pd.Series([""] * len(df1))))
+    s1_addrs = df1.get(ADDRESS_CLEAN_COL, df1.get(ADDRESS_COL, pd.Series([""] * len(df1))))
+    
+    for s1_id, name, addr in zip(df1[ENTITY_ID_COL], s1_names, s1_addrs):
         s1_keys = extract_blocking_keys(name, addr)
         
         # Match in S2
         cand_s2_counts = defaultdict(int)
         for k in s1_keys:
-            for cand_id in index2.get(k, []):
-                cand_s2_counts[cand_id] += 1
+            if k not in pruned2:
+                for cand_id in index2.get(k, []):
+                    cand_s2_counts[cand_id] += 1
                 
         # Match in S3
         cand_s3_counts = defaultdict(int)
         for k in s1_keys:
-            for cand_id in index3.get(k, []):
-                cand_s3_counts[cand_id] += 1
+            if k not in pruned3:
+                for cand_id in index3.get(k, []):
+                    cand_s3_counts[cand_id] += 1
                 
         # Sort and pick top K candidates for S2 and S3
         top_s2 = sorted(cand_s2_counts.items(), key=lambda x: x[1], reverse=True)[:max_candidates_per_s1]

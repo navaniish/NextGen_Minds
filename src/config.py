@@ -26,6 +26,7 @@ CANDIDATES_TEST_FILE  = os.path.join(CANDIDATES_DIR, "candidates_test.parquet")
 FEATURES_TRAIN_FILE   = os.path.join(FEATURES_DIR,   "features_train.parquet")
 FEATURES_TEST_FILE    = os.path.join(FEATURES_DIR,   "features_test.parquet")
 SUBMISSION_FILE       = os.path.join(SUBMISSION_DIR, "matching_results.tsv")
+CANDIDATE_PAIRS_FILE  = os.path.join(SUBMISSION_DIR, "candidate_pairs.tsv")
 BLOCKING_REPORT       = os.path.join(REPORTS_DIR, "blocking_report.csv")
 PIPELINE_REPORT       = os.path.join(REPORTS_DIR, "pipeline_report.json")
 

@@ -31,7 +31,9 @@ from config import (
     CLEAN_TRAIN_DIR, CLEAN_TEST_DIR, CANDIDATES_DIR, REPORTS_DIR,
     CLEAN_SOURCE_FILES, CLEAN_TEST_FILES, CLEAN_GT_FILE,
     CANDIDATES_TRAIN_FILE, CANDIDATES_TEST_FILE, BLOCKING_REPORT,
-    ENTITY_ID_COL, NAME_CLEAN_COL, ADDRESS_CLEAN_COL, COUNTRY_CLEAN_COL,
+    SUBMISSION_DIR, CANDIDATE_PAIRS_FILE,
+    ENTITY_ID_COL, NAME_COL, ADDRESS_COL,
+    NAME_CLEAN_COL, ADDRESS_CLEAN_COL, COUNTRY_CLEAN_COL,
     SEP,
 )
 
@@ -156,9 +158,90 @@ def generate_candidates_for_dataset(data_dir: str,
                 "shared_keys": score
             })
             
-    cand_df = pd.DataFrame(candidate_list)
+    cand_df = pd.DataFrame(candidate_list) if candidate_list else pd.DataFrame(
+        columns=["s1_id", "cand_id", "source", "shared_keys"]
+    )
     log.info(f"Generated {len(cand_df):,} candidate pairs in total.")
     return cand_df
+
+
+def generate_candidate_pairs(
+    source1_df: pd.DataFrame,
+    source2_df: pd.DataFrame,
+    source3_df: pd.DataFrame,
+    blocking_results: pd.DataFrame,
+    output_path: str,
+) -> pd.DataFrame:
+    """Convert raw blocking results into the required candidate_pairs.tsv format.
+
+    Produces one row per Source 1 entity (even those with zero candidates),
+    with all their candidate IDs (from S2 and S3) comma-separated in the
+    second column.  The output is a true TSV with a real tab separator.
+
+    Args:
+        source1_df:       DataFrame of Source 1 records, must have ENTITY_ID_COL.
+        source2_df:       DataFrame of Source 2 records (used for ID validation).
+        source3_df:       DataFrame of Source 3 records (used for ID validation).
+        blocking_results: DataFrame returned by generate_candidates_for_dataset;
+                          must have columns ["s1_id", "cand_id"].
+        output_path:      Absolute path where candidate_pairs.tsv will be written.
+
+    Returns:
+        The formatted DataFrame (also written to output_path as TSV).
+    """
+    log.info("Building candidate_pairs.tsv from blocking results ...")
+
+    # Build valid candidate ID sets for fast membership checks
+    valid_s2_ids: Set[str] = set(source2_df[ENTITY_ID_COL])
+    valid_s3_ids: Set[str] = set(source3_df[ENTITY_ID_COL])
+    valid_cand_ids: Set[str] = valid_s2_ids | valid_s3_ids
+
+    # All S1 entity IDs — preserve original order from the S1 file
+    all_s1_ids: List[str] = list(source1_df[ENTITY_ID_COL])
+    s1_id_set: Set[str] = set(all_s1_ids)
+
+    # Group blocking results: s1_id -> ordered-unique list of candidate IDs
+    # We iterate in the original row order so insertion order is preserved.
+    cand_map: Dict[str, List[str]] = {s1_id: [] for s1_id in all_s1_ids}
+    seen_per_s1: Dict[str, Set[str]] = {s1_id: set() for s1_id in all_s1_ids}
+
+    if not blocking_results.empty:
+        for s1_id, cand_id in zip(
+            blocking_results["s1_id"], blocking_results["cand_id"]
+        ):
+            # Requirement 6: exclude S1 IDs appearing as candidates
+            # Requirement 7: exclude IDs not present in S2 or S3 files
+            # Requirement 5: deduplicate
+            if (
+                s1_id in cand_map
+                and cand_id not in s1_id_set
+                and cand_id in valid_cand_ids
+                and cand_id not in seen_per_s1[s1_id]
+            ):
+                cand_map[s1_id].append(cand_id)
+                seen_per_s1[s1_id].add(cand_id)
+
+    # Build output rows — one per S1 entity, requirement 1 & 9
+    rows = [
+        {
+            "source1_entity_id": s1_id,
+            "candidate_entity_ids": ",".join(cand_map[s1_id]),  # empty string if none
+        }
+        for s1_id in all_s1_ids  # preserves original S1 file order
+    ]
+
+    output_df = pd.DataFrame(rows, columns=["source1_entity_id", "candidate_entity_ids"])
+
+    # Write with a real tab separator, no index
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    output_df.to_csv(output_path, sep="\t", index=False)
+
+    total_with_cands = (output_df["candidate_entity_ids"] != "").sum()
+    log.info(
+        f"candidate_pairs.tsv written → {output_path}  "
+        f"({len(output_df):,} S1 rows, {total_with_cands:,} with candidates)"
+    )
+    return output_df
 
 
 def evaluate_ground_truth_recall(cand_df: pd.DataFrame, gt_path: str) -> dict:
@@ -196,34 +279,57 @@ def run_blocking() -> None:
     """Main blocking execution function."""
     os.makedirs(CANDIDATES_DIR, exist_ok=True)
     os.makedirs(REPORTS_DIR, exist_ok=True)
-    
+    os.makedirs(SUBMISSION_DIR, exist_ok=True)
+
+    # ── Training split ────────────────────────────────────────────────────
     log.info("Starting candidate generation for Training Dataset ...")
     cand_train = generate_candidates_for_dataset(CLEAN_TRAIN_DIR, CLEAN_SOURCE_FILES)
     gt_path = os.path.join(CLEAN_TRAIN_DIR, CLEAN_GT_FILE)
     eval_results = evaluate_ground_truth_recall(cand_train, gt_path)
-    
+
     cand_train.to_parquet(CANDIDATES_TRAIN_FILE, index=False)
     log.info(f"Saved training candidate pairs → {CANDIDATES_TRAIN_FILE}")
 
+    # ── Test split ────────────────────────────────────────────────────────
     log.info("Starting candidate generation for Test Dataset ...")
+
+    s1_path = os.path.join(CLEAN_TEST_DIR, CLEAN_TEST_FILES["source1"])
+    s2_path = os.path.join(CLEAN_TEST_DIR, CLEAN_TEST_FILES["source2"])
+    s3_path = os.path.join(CLEAN_TEST_DIR, CLEAN_TEST_FILES["source3"])
+    test_s1_df = pd.read_csv(s1_path, sep=SEP, dtype=str, keep_default_na=False)
+    test_s2_df = pd.read_csv(s2_path, sep=SEP, dtype=str, keep_default_na=False)
+    test_s3_df = pd.read_csv(s3_path, sep=SEP, dtype=str, keep_default_na=False)
+
     cand_test = generate_candidates_for_dataset(CLEAN_TEST_DIR, CLEAN_TEST_FILES)
     cand_test.to_parquet(CANDIDATES_TEST_FILE, index=False)
     log.info(f"Saved test candidate pairs → {CANDIDATES_TEST_FILE}")
 
-    # Write report
-    report_data = [{
-        "split": "train",
-        "total_candidates": len(cand_train),
-        "recall": eval_results.get("recall", 0.0),
-        "retained_pairs": eval_results.get("retained_true_pairs", 0),
-        "total_gt_pairs": eval_results.get("total_true_pairs", 0)
-    }, {
-        "split": "test",
-        "total_candidates": len(cand_test),
-        "recall": "N/A",
-        "retained_pairs": "N/A",
-        "total_gt_pairs": "N/A"
-    }]
+    # ── Generate required candidate_pairs.tsv from test blocking results ──
+    generate_candidate_pairs(
+        source1_df=test_s1_df,
+        source2_df=test_s2_df,
+        source3_df=test_s3_df,
+        blocking_results=cand_test,
+        output_path=CANDIDATE_PAIRS_FILE,
+    )
+
+    # ── Blocking report ───────────────────────────────────────────────────
+    report_data = [
+        {
+            "split": "train",
+            "total_candidates": len(cand_train),
+            "recall": eval_results.get("recall", 0.0),
+            "retained_pairs": eval_results.get("retained_true_pairs", 0),
+            "total_gt_pairs": eval_results.get("total_true_pairs", 0),
+        },
+        {
+            "split": "test",
+            "total_candidates": len(cand_test),
+            "recall": "N/A",
+            "retained_pairs": "N/A",
+            "total_gt_pairs": "N/A",
+        },
+    ]
     pd.DataFrame(report_data).to_csv(BLOCKING_REPORT, index=False)
     log.info(f"Blocking report saved → {BLOCKING_REPORT}")
 
